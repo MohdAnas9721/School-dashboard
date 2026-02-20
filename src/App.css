@@ -1,0 +1,168 @@
+:root {
+  --bg: #f2f7f5;
+  --surface: #ffffff;
+  --ink: #102a43;
+  --muted: #486581;
+  --primary: #0f766e;
+  --primary-soft: #d1fae5;
+  --border: #d9e2ec;
+  --danger: #b91c1c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at top left, #dbf4ff 0%, #f2f7f5 40%, #eef9f2 100%);
+  color: var(--ink);
+}
+
+.page {
+  width: min(1200px, 92vw);
+  margin: 24px auto 36px;
+}
+
+.hero {
+  background: linear-gradient(135deg, #0f766e, #155e75);
+  color: #f8fafc;
+  border-radius: 14px;
+  padding: 24px;
+  box-shadow: 0 10px 30px rgba(15, 118, 110, 0.2);
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: 1.9rem;
+}
+
+.hero p {
+  margin: 8px 0 0;
+}
+
+.stats-grid,
+.content-grid,
+.tables-grid {
+  margin-top: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.stats-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.content-grid,
+.tables-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.panel,
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(16, 42, 67, 0.06);
+}
+
+.stat-card h3 {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.stat-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.5rem;
+}
+
+h2 {
+  margin: 0 0 12px;
+  font-size: 1.15rem;
+}
+
+.form-grid {
+  display: grid;
+  gap: 10px;
+}
+
+input,
+select,
+button {
+  width: 100%;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  font: inherit;
+  padding: 10px 12px;
+}
+
+input,
+select {
+  background: #fff;
+}
+
+button {
+  background: var(--primary);
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button:hover {
+  filter: brightness(1.05);
+}
+
+.status {
+  min-height: 22px;
+  margin: 10px 0 0;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.hint {
+  margin-top: 10px;
+  color: var(--muted);
+}
+
+code {
+  background: var(--primary-soft);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 4px;
+  white-space: nowrap;
+  font-size: 0.92rem;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.capitalize {
+  text-transform: capitalize;
+}
+
+@media (max-width: 640px) {
+  .hero h1 {
+    font-size: 1.5rem;
+  }
+}

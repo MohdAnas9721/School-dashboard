@@ -16,17 +16,6 @@ const fees = [
   },
 ];
 
-const attendanceLogs = [
-  {
-    id: "A-7001",
-    teacherId: "T-101",
-    teacherName: "Meera Sharma",
-    deviceId: "FR-1",
-    status: "present",
-    verifiedAt: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
-  },
-];
-
 const makeId = (prefix, base = 1000) => `${prefix}-${base + Math.floor(Math.random() * 9000)}`;
 
 const nowIso = () => new Date().toISOString();
@@ -34,7 +23,6 @@ const nowIso = () => new Date().toISOString();
 export const store = {
   teachers,
   fees,
-  attendanceLogs,
   makeId,
   nowIso,
 };

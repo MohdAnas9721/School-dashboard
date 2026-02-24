@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { api } from "./api/client";
+import { Sidebar } from "./components/Sidebar";
+import { DashboardSection } from "./sections/DashboardSection";
+import { StudentsSection } from "./sections/StudentsSection";
+import { PaymentsSection } from "./sections/PaymentsSection";
+import { TeachersSection } from "./sections/TeachersSection";
+import { SettingsSection } from "./sections/SettingsSection";
 import "./App.css";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
 const defaultFeeForm = {
   studentName: "",
@@ -11,288 +16,407 @@ const defaultFeeForm = {
   paymentMode: "UPI",
 };
 
-const defaultAttendanceForm = {
+const defaultTeacherForm = {
+  schoolName: "",
   teacherId: "",
-  deviceId: "FR-1",
-  fingerprintToken: "",
+  name: "",
+  subject: "",
+  grade: "",
+  phone: "",
+  email: "",
 };
 
-async function apiRequest(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+const defaultStudentForm = {
+  schoolName: "",
+  className: "",
+  studentId: "",
+  name: "",
+  rollNo: "",
+  parentName: "",
+  phone: "",
+};
 
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.message || "Request failed");
-  }
+function generateLocalTeacherId(schoolName, teachers) {
+  const prefix =
+    String(schoolName)
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part[0]?.toUpperCase() || "")
+      .join("")
+      .slice(0, 4) || "SCH";
 
-  return data;
+  const expression = new RegExp(`^${prefix}-T-(\\d{4})$`);
+  const max = teachers.reduce((acc, teacher) => {
+    const match = teacher.id?.match(expression);
+    if (!match) {
+      return acc;
+    }
+    return Math.max(acc, Number.parseInt(match[1], 10));
+  }, 1000);
+
+  return `${prefix}-T-${String(max + 1).padStart(4, "0")}`;
+}
+
+function generateLocalStudentId(schoolName, className, students) {
+  const schoolPrefix =
+    String(schoolName)
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part[0]?.toUpperCase() || "")
+      .join("")
+      .slice(0, 4) || "SCH";
+
+  const classCode =
+    String(className).replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 4) || "GEN";
+
+  const expression = new RegExp(`^${schoolPrefix}-${classCode}-S-(\\d{4})$`);
+  const max = students.reduce((acc, student) => {
+    const match = String(student.id || "").match(expression);
+    if (!match) {
+      return acc;
+    }
+    return Math.max(acc, Number.parseInt(match[1], 10));
+  }, 1000);
+
+  return `${schoolPrefix}-${classCode}-S-${String(max + 1).padStart(4, "0")}`;
 }
 
 function App() {
+  const [activeSection, setActiveSection] = useState("dashboard");
+
   const [summary, setSummary] = useState(null);
   const [fees, setFees] = useState([]);
-  const [attendanceLogs, setAttendanceLogs] = useState([]);
   const [teachers, setTeachers] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [files, setFiles] = useState([]);
 
   const [feeForm, setFeeForm] = useState(defaultFeeForm);
-  const [attendanceForm, setAttendanceForm] = useState(defaultAttendanceForm);
+  const [teacherForm, setTeacherForm] = useState(defaultTeacherForm);
+  const [studentForm, setStudentForm] = useState(defaultStudentForm);
 
   const [feeStatus, setFeeStatus] = useState("");
-  const [attendanceStatus, setAttendanceStatus] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [teacherStatus, setTeacherStatus] = useState("");
+  const [studentStatus, setStudentStatus] = useState("");
+  const [generatedTeacherCard, setGeneratedTeacherCard] = useState(null);
+  const [generatedStudentCard, setGeneratedStudentCard] = useState(null);
 
-  const selectedTeacher = useMemo(
-    () => teachers.find((teacher) => teacher.id === attendanceForm.teacherId),
-    [attendanceForm.teacherId, teachers],
-  );
+  const [selectedTeacher, setSelectedTeacher] = useState(null);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [teacherMode, setTeacherMode] = useState("add");
+  const [studentMode, setStudentMode] = useState("add");
+  const [selectedStudentRecord, setSelectedStudentRecord] = useState(null);
 
-  const loadDashboard = useCallback(async () => {
-    setLoading(true);
+  const isEditingTeacher = teacherMode === "edit" && Boolean(selectedTeacher);
+  const isEditingStudent = studentMode === "edit" && Boolean(selectedStudentRecord);
 
-    try {
-      const [summaryRes, feesRes, attendanceRes, teachersRes] = await Promise.all([
-        apiRequest("/api/dashboard/summary"),
-        apiRequest("/api/fees?limit=8"),
-        apiRequest("/api/attendance/live?limit=8"),
-        apiRequest("/api/teachers"),
-      ]);
+  const loadAllData = useCallback(async () => {
+    const [summaryRes, feesRes, teachersRes, studentsRes, filesRes] = await Promise.all([
+      api.getSummary(),
+      api.getFees("limit=20"),
+      api.getTeachers(),
+      api.getStudents(),
+      api.getFiles(40),
+    ]);
 
-      setSummary(summaryRes);
-      setFees(feesRes.fees);
-      setAttendanceLogs(attendanceRes.logs);
-      setTeachers(teachersRes.teachers);
+    setSummary(summaryRes);
+    setFees(feesRes.fees);
+    setTeachers(teachersRes.teachers);
+    setStudents(studentsRes.students);
+    setFiles(filesRes.files);
 
-      if (teachersRes.teachers.length > 0) {
-        setAttendanceForm((current) =>
-          current.teacherId
-            ? current
-            : {
-                ...current,
-                teacherId: teachersRes.teachers[0].id,
-              },
-        );
-      }
-    } catch (error) {
-      setFeeStatus(error.message);
-    } finally {
-      setLoading(false);
+    if (filesRes.files.length > 0) {
+      const first = filesRes.files[0];
+      setSelectedStudent((current) =>
+        current
+          ? current
+          : {
+              studentName: first.studentName,
+              className: first.className,
+              rollNo: first.rollNo,
+            },
+      );
     }
   }, []);
 
   useEffect(() => {
-    loadDashboard();
-  }, [loadDashboard]);
+    const init = async () => {
+      try {
+        await loadAllData();
+      } catch (error) {
+        setFeeStatus(error.message);
+      }
+    };
+
+    init();
+  }, [loadAllData]);
 
   const handleFeeSubmit = async (event) => {
     event.preventDefault();
-    setFeeStatus("Submitting fee...");
+    setFeeStatus("Saving fee...");
 
     try {
-      await apiRequest("/api/fees", {
-        method: "POST",
-        body: JSON.stringify(feeForm),
-      });
-
-      setFeeStatus("Fee submitted successfully.");
+      await api.createFee(feeForm);
+      setFeeStatus("Fee saved successfully.");
       setFeeForm(defaultFeeForm);
-      await loadDashboard();
+      await loadAllData();
     } catch (error) {
       setFeeStatus(error.message);
     }
   };
 
-  const handleAttendanceSubmit = async (event) => {
-    event.preventDefault();
-    setAttendanceStatus("Verifying fingerprint...");
-
+  const handleSelectTeacher = async (teacherId) => {
+    setTeacherStatus("Loading teacher details...");
     try {
-      await apiRequest("/api/attendance/fingerprint", {
-        method: "POST",
-        body: JSON.stringify(attendanceForm),
+      const response = await api.getTeacherById(teacherId);
+      const teacher = response.teacher;
+      setSelectedTeacher(teacher);
+      setTeacherForm({
+        schoolName: teacher.schoolName || "",
+        teacherId: teacher.id,
+        name: teacher.name,
+        subject: teacher.subject,
+        grade: teacher.grade,
+        phone: teacher.phone || "",
+        email: teacher.email || "",
       });
-
-      setAttendanceStatus("Fingerprint verified. Attendance applied.");
-      setAttendanceForm((current) => ({ ...current, fingerprintToken: "" }));
-      await loadDashboard();
+      setTeacherMode("edit");
+      setTeacherStatus("Teacher details loaded.");
     } catch (error) {
-      setAttendanceStatus(error.message);
+      setTeacherStatus(error.message);
     }
   };
 
+  const handleGenerateTeacherId = async () => {
+    if (!teacherForm.schoolName.trim()) {
+      setTeacherStatus("School name likho, fir ID generate hoga.");
+      return;
+    }
+
+    try {
+      const response = await api.generateTeacherId(teacherForm.schoolName);
+      setTeacherForm((current) => ({ ...current, teacherId: response.teacherId }));
+      setTeacherStatus("Teacher ID generated.");
+    } catch {
+      const fallbackId = generateLocalTeacherId(teacherForm.schoolName, teachers);
+      setTeacherForm((current) => ({ ...current, teacherId: fallbackId }));
+      setTeacherStatus("Backend generate API unavailable. Local teacher ID generated.");
+    }
+  };
+
+  const handleSaveTeacher = async (event) => {
+    event.preventDefault();
+
+    try {
+      let savedTeacher = null;
+      const wasEditingTeacher = isEditingTeacher;
+
+      if (wasEditingTeacher) {
+        const response = await api.updateTeacher(selectedTeacher.id, teacherForm);
+        savedTeacher = response.teacher;
+        setTeacherStatus("Teacher updated successfully. ID card generated.");
+      } else {
+        const response = await api.addTeacher(teacherForm);
+        savedTeacher = response.teacher;
+        setTeacherStatus("Teacher added successfully. ID card generated.");
+      }
+
+      if (savedTeacher) {
+        setTeachers((current) => {
+          const next = current.filter((item) => item.id !== savedTeacher.id);
+          next.push(savedTeacher);
+          next.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+          return next;
+        });
+      }
+
+      setGeneratedTeacherCard(savedTeacher);
+      if (savedTeacher) {
+        if (wasEditingTeacher) {
+          setSelectedTeacher(savedTeacher);
+          setTeacherForm({
+            schoolName: savedTeacher.schoolName || "",
+            teacherId: savedTeacher.id,
+            name: savedTeacher.name,
+            subject: savedTeacher.subject,
+            grade: savedTeacher.grade,
+            phone: savedTeacher.phone || "",
+            email: savedTeacher.email || "",
+          });
+          setTeacherMode("edit");
+        } else {
+          setSelectedTeacher(savedTeacher);
+          setTeacherForm(defaultTeacherForm);
+          setTeacherMode("add");
+        }
+      }
+
+      await loadAllData();
+    } catch (error) {
+      if (String(error.message).includes("Cannot POST /api/teachers")) {
+        setTeacherStatus("Teacher add API not active. Restart backend: npm --prefix backend run dev");
+        return;
+      }
+      setTeacherStatus(error.message);
+    }
+  };
+
+  const handleResetTeacherForm = () => {
+    setSelectedTeacher(null);
+    setTeacherForm(defaultTeacherForm);
+    setTeacherMode("add");
+    setTeacherStatus("New teacher form ready.");
+  };
+
+  const handleGenerateStudentId = async () => {
+    if (!studentForm.schoolName.trim() || !studentForm.className.trim()) {
+      setStudentStatus("School name aur class name likho, fir ID generate hoga.");
+      return;
+    }
+
+    try {
+      const response = await api.generateStudentId(studentForm.schoolName, studentForm.className);
+      setStudentForm((current) => ({ ...current, studentId: response.studentId }));
+      setStudentStatus("Student ID generated.");
+    } catch (error) {
+      const fallbackId = generateLocalStudentId(studentForm.schoolName, studentForm.className, students);
+      setStudentForm((current) => ({ ...current, studentId: fallbackId }));
+      setStudentStatus(
+        `Backend generate API unavailable. Local student ID generated.${
+          error?.message ? ` (${error.message})` : ""
+        }`,
+      );
+    }
+  };
+
+  const handleEditStudent = (student) => {
+    setSelectedStudentRecord(student);
+    setStudentMode("edit");
+    setStudentForm({
+      schoolName: student.schoolName || "",
+      className: student.className || "",
+      studentId: student.id || "",
+      name: student.name || "",
+      rollNo: student.rollNo || "",
+      parentName: student.parentName || "",
+      phone: student.phone || "",
+    });
+    setGeneratedStudentCard(student);
+    setStudentStatus("Student edit mode active.");
+  };
+
+  const handleResetStudentForm = () => {
+    setSelectedStudentRecord(null);
+    setStudentMode("add");
+    setStudentForm(defaultStudentForm);
+    setStudentStatus("Student form cleared.");
+  };
+
+  const handleSaveStudent = async (event) => {
+    event.preventDefault();
+    setStudentStatus("Saving student...");
+
+    try {
+      const wasEditingStudent = isEditingStudent;
+      const response = wasEditingStudent
+        ? await api.updateStudent(selectedStudentRecord.id, studentForm)
+        : await api.addStudent(studentForm);
+
+      const savedStudent = response.student;
+      setStudents((current) => {
+        const next = current.filter((item) => item.id !== savedStudent.id);
+        next.unshift(savedStudent);
+        return next;
+      });
+      setGeneratedStudentCard(savedStudent);
+      setSelectedStudentRecord(savedStudent);
+      setStudentStatus(
+        wasEditingStudent
+          ? "Student updated successfully. ID card saved."
+          : "Student added successfully. ID card saved.",
+      );
+      setStudentForm(defaultStudentForm);
+      setStudentMode("add");
+      setSelectedStudentRecord(null);
+      await loadAllData();
+    } catch (error) {
+      setStudentStatus(error.message);
+    }
+  };
+
+  const renderSection = () => {
+    if (activeSection === "dashboard") {
+      return (
+        <DashboardSection
+          summary={summary}
+          teachers={teachers}
+          students={students}
+          fees={fees.slice(0, 8)}
+          files={files.slice(0, 8)}
+        />
+      );
+    }
+
+    if (activeSection === "students") {
+      return (
+        <StudentsSection
+          students={students}
+          files={files}
+          selectedStudent={selectedStudent}
+          onSelectStudent={setSelectedStudent}
+          studentForm={studentForm}
+          setStudentForm={setStudentForm}
+          studentStatus={studentStatus}
+          onGenerateStudentId={handleGenerateStudentId}
+          onSaveStudent={handleSaveStudent}
+          generatedStudentCard={generatedStudentCard}
+          isEditingStudent={isEditingStudent}
+          onEditStudent={handleEditStudent}
+          onResetStudentForm={handleResetStudentForm}
+        />
+      );
+    }
+
+    if (activeSection === "payment") {
+      return (
+        <PaymentsSection
+          feeForm={feeForm}
+          setFeeForm={setFeeForm}
+          onSubmitFee={handleFeeSubmit}
+          feeStatus={feeStatus}
+          fees={fees}
+        />
+      );
+    }
+
+    if (activeSection === "teacher") {
+      return (
+        <TeachersSection
+          teachers={teachers}
+          selectedTeacher={selectedTeacher}
+          onSelectTeacher={handleSelectTeacher}
+          teacherForm={teacherForm}
+          setTeacherForm={setTeacherForm}
+          teacherStatus={teacherStatus}
+          onGenerateTeacherId={handleGenerateTeacherId}
+          onSaveTeacher={handleSaveTeacher}
+          isEditingTeacher={isEditingTeacher}
+          onResetTeacherForm={handleResetTeacherForm}
+          generatedTeacherCard={generatedTeacherCard}
+        />
+      );
+    }
+
+    return <SettingsSection />;
+  };
+
   return (
-    <div className="page">
-      <header className="hero">
-        <h1>School Admin Dashboard</h1>
-        <p>Fees jama karein aur teacher fingerprint attendance live apply karein.</p>
-      </header>
-
-      <section className="stats-grid">
-        <article className="stat-card">
-          <h3>Total Teachers</h3>
-          <strong>{summary?.totalTeachers ?? "-"}</strong>
-        </article>
-        <article className="stat-card">
-          <h3>Total Fee Records</h3>
-          <strong>{summary?.totalFeeRecords ?? "-"}</strong>
-        </article>
-        <article className="stat-card">
-          <h3>Today Collection</h3>
-          <strong>Rs. {summary?.todayCollection ?? "-"}</strong>
-        </article>
-        <article className="stat-card">
-          <h3>Today Attendance</h3>
-          <strong>{summary?.todayAttendanceCount ?? "-"}</strong>
-        </article>
-      </section>
-
-      <section className="content-grid">
-        <article className="panel">
-          <h2>Fee Submission</h2>
-          <form onSubmit={handleFeeSubmit} className="form-grid">
-            <input
-              placeholder="Student Name"
-              value={feeForm.studentName}
-              onChange={(event) => setFeeForm({ ...feeForm, studentName: event.target.value })}
-              required
-            />
-            <input
-              placeholder="Class"
-              value={feeForm.className}
-              onChange={(event) => setFeeForm({ ...feeForm, className: event.target.value })}
-              required
-            />
-            <input
-              placeholder="Roll Number"
-              value={feeForm.rollNo}
-              onChange={(event) => setFeeForm({ ...feeForm, rollNo: event.target.value })}
-              required
-            />
-            <input
-              type="number"
-              placeholder="Amount"
-              min="1"
-              value={feeForm.amount}
-              onChange={(event) => setFeeForm({ ...feeForm, amount: event.target.value })}
-              required
-            />
-            <select
-              value={feeForm.paymentMode}
-              onChange={(event) => setFeeForm({ ...feeForm, paymentMode: event.target.value })}
-            >
-              <option value="UPI">UPI</option>
-              <option value="Cash">Cash</option>
-              <option value="Card">Card</option>
-              <option value="NetBanking">Net Banking</option>
-            </select>
-            <button type="submit">Submit Fee</button>
-          </form>
-          <p className="status">{feeStatus}</p>
-        </article>
-
-        <article className="panel">
-          <h2>Teacher Fingerprint Attendance</h2>
-          <form onSubmit={handleAttendanceSubmit} className="form-grid">
-            <select
-              value={attendanceForm.teacherId}
-              onChange={(event) =>
-                setAttendanceForm({
-                  ...attendanceForm,
-                  teacherId: event.target.value,
-                  fingerprintToken: "",
-                })
-              }
-              required
-            >
-              {teachers.map((teacher) => (
-                <option key={teacher.id} value={teacher.id}>
-                  {teacher.name} ({teacher.id})
-                </option>
-              ))}
-            </select>
-            <input
-              placeholder="Device ID"
-              value={attendanceForm.deviceId}
-              onChange={(event) => setAttendanceForm({ ...attendanceForm, deviceId: event.target.value })}
-              required
-            />
-            <input
-              placeholder="Fingerprint Token"
-              value={attendanceForm.fingerprintToken}
-              onChange={(event) =>
-                setAttendanceForm({ ...attendanceForm, fingerprintToken: event.target.value })
-              }
-              required
-            />
-            <button type="submit">Verify & Apply Attendance</button>
-          </form>
-
-          <p className="hint">
-            Demo token for selected teacher: <code>{selectedTeacher ? `VALID_${selectedTeacher.id}` : "-"}</code>
-          </p>
-          <p className="status">{attendanceStatus}</p>
-        </article>
-      </section>
-
-      <section className="tables-grid">
-        <article className="panel">
-          <h2>Recent Fee Entries</h2>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Student</th>
-                  <th>Class</th>
-                  <th>Roll</th>
-                  <th>Amount</th>
-                  <th>Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {fees.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.studentName}</td>
-                    <td>{item.className}</td>
-                    <td>{item.rollNo}</td>
-                    <td>Rs. {item.amount}</td>
-                    <td>{new Date(item.submittedAt).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {!loading && fees.length === 0 && <p>No fee records yet.</p>}
-          </div>
-        </article>
-
-        <article className="panel">
-          <h2>Live Attendance Log</h2>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Teacher</th>
-                  <th>Device</th>
-                  <th>Status</th>
-                  <th>Verified At</th>
-                </tr>
-              </thead>
-              <tbody>
-                {attendanceLogs.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.teacherName}</td>
-                    <td>{item.deviceId}</td>
-                    <td className="capitalize">{item.status}</td>
-                    <td>{new Date(item.verifiedAt).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {!loading && attendanceLogs.length === 0 && <p>No attendance logs yet.</p>}
-          </div>
-        </article>
-      </section>
+    <div className="app-shell">
+      <main className="content-shell">
+        <Sidebar activeSection={activeSection} onChangeSection={setActiveSection} />
+        <div className="section-host">{renderSection()}</div>
+      </main>
     </div>
   );
 }
